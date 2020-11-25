@@ -161,6 +161,9 @@ message LogMessageAppendRequest {
 
   // payload is the actual log data to append to the stream.
   bytes payload = 3;
+
+  // timestamp is the time the message was originally received
+  google.protobuf.Timestamp timestamp = 4;
 }
 
 message LogMessageAppendResponse {
@@ -198,4 +201,7 @@ message LogMessageListResponse {
 
   // payload is the actual log data.
   bytes payload = 3;
+
+  // timestamp is the time the message was originally received
+  google.protobuf.Timestamp timestamp = 4;
 }
