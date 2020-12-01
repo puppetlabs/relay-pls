@@ -30,6 +30,16 @@ jobs:
     script:
     - "./scripts/ci test"
   - stage: build
+    before_script:
+    - if [ ! -d "$HOME/google-cloud-sdk/bin" ]; then rm -rf $HOME/google-cloud-sdk;
+      export CLOUDSDK_CORE_DISABLE_PROMPTS=1; curl https://sdk.cloud.google.com |
+      bash; fi
+    - source "$HOME"/google-cloud-sdk/path.bash.inc
+    - openssl aes-256-cbc -K $encrypted_bdcc93d4c365_key -iv $encrypted_bdcc93d4c365_iv
+      -in scripts/nebula-gcloud-service-account.json.enc -out scripts/nebula-gcloud-service-account.json
+      -d
+    - gcloud auth activate-service-account --key-file scripts/nebula-gcloud-service-account.json
+    - gcloud --quiet auth configure-docker
     script:
     - "./scripts/ci build"
     - "./scripts/ci release"
