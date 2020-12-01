@@ -1,0 +1,48 @@
+dist: bionic
+addons:
+  apt:
+    sources:
+    - sourceline: deb http://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/xUbuntu_18.04/
+        /
+      key_url: https://download.opensuse.org/repositories/devel:kubic:libcontainers:stable/xUbuntu_18.04/Release.key
+    packages:
+    - buildah
+language: go
+go:
+- 1.14.x
+cache:
+  directories:
+  - "${GOPATH}/pkg/mod"
+  - "${GOPATH}/pkg/sumdb"
+env:
+  global:
+  - GO111MODULE: 'on'
+  - DOCKER_CONFIG: "/tmp/.docker"
+  - DOCKERHUB_USERNAME: relayshro
+  - secure: EGWWMhmIJjCPOh1ADo817H6170v36T8XfFQoUiuOgba7971UGFLIWZeun+ZGZI75inVPBMNDYuVktjp46VsWyyMGq4c+t29YaS6o5gwyT1eAGkKjsmVKVR3xJLr6XQuCaFN2SZkS/nuVfov/PBIkO7H2tq8ffrZOCVrEO1YmtlTUOuoe5CGEdi+ipzbDEspSmEcoGxXp1Nfti1PVH2T725oZxo1qzjK4fAKf847C3p+jF548E9c1Pyfcm7wZiaakPhBUIIHzgYFXOkhGpurHiVVUSMvWGFrSsBVhrIT3tWpSVOqwTMq4DVJRBiJkydCNX7ezCAjMmKoqu/aBv5uaDCmdinIsgWAAB8QLwM3slDNyQ85F9UdEMfXxcPwMI0NOJKyL1iQ1wnfPm7DeBInvBsLP6RwFkePjbvJWnFbmmp7szgcW5vqLNH1xlb6Te7bsqiFsYD75VOIT283FRQSd7Luade5bV/mVgXt4h87BYeZe+eslGmS8NB/tS1CFj3vX6lPsH4hWJNizz5czTgCPik2HfsvTuxzClSuN+hSrUsYPGWWnx3JHU9VfiOK6XKstRvBIir6V++n1SWolzk4XXVyTXViDcSk21pwJOXv6hz1HJjO/vVFJY0qzJm5tn5GThc9yEbp2IaIPqvz8kt/4mJFIQEupvZrbJrgSE4N56/M=
+install:
+- mkdir -p "${DOCKER_CONFIG}"
+- echo '{}' >"${DOCKER_CONFIG}/config.json"
+- docker login --username "${DOCKERHUB_USERNAME}" --password-stdin <<<"${DOCKERHUB_PASSWORD}"
+jobs:
+  include:
+  - stage: test
+    script:
+    - "./scripts/ci test"
+  - stage: build
+    before_script:
+    - if [ ! -d "$HOME/google-cloud-sdk/bin" ]; then rm -rf $HOME/google-cloud-sdk;
+      export CLOUDSDK_CORE_DISABLE_PROMPTS=1; curl https://sdk.cloud.google.com |
+      bash; fi
+    - source "$HOME"/google-cloud-sdk/path.bash.inc
+    - openssl aes-256-cbc -K $encrypted_bdcc93d4c365_key -iv $encrypted_bdcc93d4c365_iv
+      -in scripts/nebula-gcloud-service-account.json.enc -out scripts/nebula-gcloud-service-account.json
+      -d
+    - gcloud auth activate-service-account --key-file scripts/nebula-gcloud-service-account.json
+    - gcloud --quiet auth configure-docker
+    script:
+    - "./scripts/ci build"
+    - "./scripts/ci release"
+  - stage: deploy
+    script:
+    - "./scripts/ci deploy"
