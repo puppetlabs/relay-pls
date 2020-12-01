@@ -6,7 +6,7 @@ export RELAY_PLS_BUILD_DIR="${RELAY_PLS_BUILD_DIR:-.build}"
 export NO_DOCKER_PUSH="${NO_DOCKER_PUSH:-yes}"
 
 export RELAY_PLS_RELEASE_LATEST=
-[ "${TRAVIS_BRANCH}" = "master" ] && [ "${TRAVIS_PULL_REQUEST}" = "false" ] && export RELAY_PLS_RELEASE_LATEST=true
+[ "${TRAVIS_BRANCH}" = "main" ] && [ "${TRAVIS_PULL_REQUEST}" = "false" ] && export RELAY_PLS_RELEASE_LATEST=true
 
 DIRTY=
 [ -n "$(git status --porcelain --untracked-files=no)" ] && DIRTY="-dirty"
