@@ -22,6 +22,20 @@ if [[ "$TRAVIS_PULL_REQUEST" == "false" ]]; then
         export NO_DOCKER_PUSH=
 fi
 
+declare -A RELAY_WORKFLOWS
+
+[ -r "$(dirname "$0")/relay-deploy.sh" ] && source "$(dirname "$0")/relay-deploy.sh"
+
+RELAY_WORKFLOWS[main]=nebula-prod-1
+RELAY_WORKFLOWS[development]=nebula-stage-1
+
+RELAY_WORKFLOW=${RELAY_WORKFLOWS["$TRAVIS_BRANCH"]:-}
+if [ -z "${RELAY_WORKFLOW}" ]; then
+    export NO_DOCKER_PUSH=yes
+else
+    export RELAY_WORKFLOW
+fi
+
 if [ -n "${DIRTY}" ]; then
     export NO_DOCKER_PUSH=yes
 fi
