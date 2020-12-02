@@ -8,9 +8,9 @@ release_docker_images() {
     if [ "${NO_DOCKER_PUSH}" != "yes" ]; then
         gcloud auth configure-docker || fail "gcloud authentication was not configured correctly"
 
-        for REPO in "${RELAY_CORE_RELEASE_REPOS[@]}"; do
+        for REPO in "${RELAY_PLS_RELEASE_REPOS[@]}"; do
             docker push "${REPO}:${VERSION}" || fail "failed to push to the docker repository"
-            if [ "${RELAY_CORE_RELEASE_LATEST}" = "true" ]; then
+            if [ "${RELAY_PLS_RELEASE_LATEST}" = "true" ]; then
                 docker tag "${REPO}:${VERSION}" "${REPO}"
                 docker push "${REPO}" || fail "failed to push to the docker repository"
             fi
