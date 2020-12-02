@@ -1,0 +1,53 @@
+package manager
+
+import (
+	"bytes"
+	"context"
+	"encoding/base64"
+
+	"github.com/google/tink/go/aead"
+	"github.com/google/tink/go/insecurecleartextkeyset"
+	"github.com/google/tink/go/keyset"
+)
+
+type KeyManager struct {
+}
+
+func (m *KeyManager) Create(ctx context.Context) (string, error) {
+	kt := aead.AES256GCMKeyTemplate()
+
+	kh, err := keyset.NewHandle(kt)
+	if err != nil {
+		return "", err
+	}
+
+	var buf bytes.Buffer
+	writer := keyset.NewBinaryWriter(&buf)
+
+	if err := insecurecleartextkeyset.Write(kh, writer); err != nil {
+		return "", err
+	}
+
+	return base64.RawStdEncoding.EncodeToString(buf.Bytes()), nil
+}
+
+func (m *KeyManager) Encrypt(ctx context.Context, key string, data []byte) ([]byte, error) {
+	r, _ := base64.RawStdEncoding.DecodeString(key)
+	read := bytes.NewBuffer(r)
+	reader := keyset.NewBinaryReader(read)
+	kh, err := insecurecleartextkeyset.Read(reader)
+	if err != nil {
+		return nil, err
+	}
+
+	a, err := aead.New(kh)
+	if err != nil {
+		return nil, err
+	}
+
+	return a.Encrypt([]byte(data), nil)
+}
+
+func NewKeyManager() *KeyManager {
+	return &KeyManager{}
+}
