@@ -8,6 +8,10 @@ import (
 	"cloud.google.com/go/bigquery"
 	vaultapi "github.com/hashicorp/vault/api"
 	"github.com/spf13/viper"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/stdout"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"google.golang.org/api/googleapi"
 )
 
@@ -18,6 +22,8 @@ const (
 )
 
 type Config struct {
+	Debug bool
+
 	ListenPort int
 
 	Dataset string
@@ -88,6 +94,26 @@ func (c *Config) VaultClient() (*vaultapi.Client, error) {
 	return nil, nil
 }
 
+func (c *Config) WithTelemetry() error {
+	exporter, err := stdout.NewExporter(stdout.WithPrettyPrint())
+	if err != nil {
+		return err
+	}
+
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sdktrace.AlwaysSample()}),
+		sdktrace.WithSyncer(exporter),
+	)
+	if err != nil {
+		return err
+	}
+
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
+
+	return nil
+}
+
 func NewConfig() (*Config, error) {
 	viper.SetEnvPrefix("relay_pls")
 	viper.AutomaticEnv()
@@ -96,6 +122,8 @@ func NewConfig() (*Config, error) {
 	viper.SetDefault("vault_engine_mount", DefaultVaultEngineMount)
 
 	config := &Config{
+		Debug: viper.GetBool("debug"),
+
 		ListenPort: viper.GetInt("listen_port"),
 
 		Dataset: viper.GetString("dataset"),

@@ -10,6 +10,7 @@ import (
 	"github.com/puppetlabs/relay-pls/pkg/plspb"
 	"github.com/puppetlabs/relay-pls/pkg/server"
 	"github.com/puppetlabs/relay-pls/pkg/util/vaultutil"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 )
 
@@ -17,6 +18,12 @@ func main() {
 	cfg, err := opt.NewConfig()
 	if err != nil {
 		log.Fatalf("failed to configure options: %v", err)
+	}
+
+	if cfg.Debug {
+		if err = cfg.WithTelemetry(); err != nil {
+			log.Fatalf("failed to configure telemetry: %v", err)
+		}
 	}
 
 	var serverOpts []server.BigQueryServerOption
@@ -56,15 +63,21 @@ func main() {
 		server.WithKeyManager(keyManager),
 	)
 
-	server := server.NewBigQueryServer(table, serverOpts...)
+	bqs := server.NewBigQueryServer(table, serverOpts...)
 
-	grpcServer := grpc.NewServer()
-	plspb.RegisterLogService(grpcServer, server.Svc())
+	s := grpc.NewServer(
+		grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
+		grpc.StreamInterceptor(otelgrpc.StreamServerInterceptor()),
+	)
+
+	plspb.RegisterLogService(s, bqs.Svc())
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.ListenPort))
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
 
-	grpcServer.Serve(lis)
+	if err := s.Serve(lis); err != nil {
+		log.Fatalf("failed to serve: %v", err)
+	}
 }

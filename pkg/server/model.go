@@ -48,31 +48,31 @@ func (qb *BigQueryTableQueryBuilder) WithEncryptionKey(encryptionKey string) {
 	}
 }
 
-func (qb *BigQueryTableQueryBuilder) WithStartAt(time *time.Time) {
+func (qb *BigQueryTableQueryBuilder) WithStartAt(startAt *time.Time) {
 	qb.parameters["startAt"] = bigquery.QueryParameter{
 		Name:  "startAt",
-		Value: time.Format(BigQueryTimestampFormat),
+		Value: startAt.Format(BigQueryTimestampFormat),
 	}
 }
 
-func (qb *BigQueryTableQueryBuilder) WithEndAt(time *time.Time) {
+func (qb *BigQueryTableQueryBuilder) WithEndAt(endAt *time.Time) {
 	qb.parameters["endAt"] = bigquery.QueryParameter{
 		Name:  "endAt",
-		Value: time.Format(BigQueryTimestampFormat),
+		Value: endAt.Format(BigQueryTimestampFormat),
 	}
 }
 
-func (qb *BigQueryTableQueryBuilder) After(time *time.Time) {
+func (qb *BigQueryTableQueryBuilder) After(after *time.Time) {
 	qb.parameters["after"] = bigquery.QueryParameter{
 		Name:  "after",
-		Value: time.Format(BigQueryTimestampFormat),
+		Value: after.Format(BigQueryTimestampFormat),
 	}
 }
 
-func (qb *BigQueryTableQueryBuilder) Before(time *time.Time) {
+func (qb *BigQueryTableQueryBuilder) Before(before *time.Time) {
 	qb.parameters["before"] = bigquery.QueryParameter{
 		Name:  "before",
-		Value: time.Format(BigQueryTimestampFormat),
+		Value: before.Format(BigQueryTimestampFormat),
 	}
 }
 
@@ -133,6 +133,7 @@ type LogMessage struct {
 	EncryptedPayload []byte
 }
 
+//nolint:gocritic
 func (lm *LogMessage) Save() (map[string]bigquery.Value, string, error) {
 	return map[string]bigquery.Value{
 		"log_id":            lm.LogID,
