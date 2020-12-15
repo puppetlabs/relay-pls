@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"cloud.google.com/go/bigquery"
@@ -184,7 +185,12 @@ func (s *BigQueryServer) MessageList(in *plspb.LogMessageListRequest, stream pls
 				message.LogMessageId = logMessageID
 			}
 
-			stream.Send(message)
+			// FIXME Add retry logic
+			// FIXME Collate errors
+			if err := stream.Send(message); err != nil {
+				// FIXME Do not log within this context
+				log.Printf("failed to send message: %v", err)
+			}
 		}
 
 		if !in.GetFollow() {

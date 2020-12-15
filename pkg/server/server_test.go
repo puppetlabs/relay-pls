@@ -64,14 +64,15 @@ func TestBigQueryServer(t *testing.T) {
 	logs := []*model.Log{}
 	for logIndex := 0; logIndex < MAX_LOG_COUNT; logIndex++ {
 		logContext := uuid.New().String()
-		logs = append(logs, &model.Log{
-			Context: logContext,
-			Name:    "stdout",
-		})
-		logs = append(logs, &model.Log{
-			Context: logContext,
-			Name:    "stderr",
-		})
+		logs = append(logs,
+			&model.Log{
+				Context: logContext,
+				Name:    "stdout",
+			},
+			&model.Log{
+				Context: logContext,
+				Name:    "stderr",
+			})
 	}
 
 	ctx := context.Background()
