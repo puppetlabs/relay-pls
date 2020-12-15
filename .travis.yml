@@ -26,10 +26,21 @@ install:
 - mkdir -p "${DOCKER_CONFIG}"
 - echo '{}' >"${DOCKER_CONFIG}/config.json"
 - docker login --username "${DOCKERHUB_USERNAME}" --password-stdin <<<"${DOCKERHUB_PASSWORD}"
+stages:
+  - check
+  - test
+  - build
+  - deploy
 jobs:
   include:
+  - stage: check
+    before_script:
+    - go get github.com/golangci/golangci-lint/cmd/golangci-lint@v1.33.0
+    script:
+    - golangci-lint run --issues-exit-code 0
   - stage: test
     before_script:
+    - go get gotest.tools/gotestsum
     - openssl aes-256-cbc -K $encrypted_c51f15aa433d_key -iv $encrypted_c51f15aa433d_iv
       -in scripts/nebula-ci-service-account.json.enc -out scripts/nebula-ci-service-account.json -d
     script:
