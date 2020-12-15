@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hashicorp/vault/api"
-	"github.com/puppetlabs/horsehead/v2/encoding/transfer"
+	"github.com/puppetlabs/leg/encoding/transfer"
 	"github.com/puppetlabs/relay-pls/pkg/model"
 )
 
