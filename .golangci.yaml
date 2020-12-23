@@ -6,6 +6,8 @@ linters-settings:
     - opinionated
     - performance
     - style
+    disabled-checks:
+    - ifElseChain
   gocyclo:
     min-complexity: 20
   nolintlint:
