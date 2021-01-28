@@ -9,7 +9,9 @@ import (
 	vaultapi "github.com/hashicorp/vault/api"
 	"github.com/spf13/viper"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/metric/prometheus"
 	"go.opentelemetry.io/otel/exporters/stdout"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"google.golang.org/api/googleapi"
@@ -23,6 +25,9 @@ const (
 
 type Config struct {
 	Debug bool
+
+	MetricsEnabled bool
+	MetricsAddr    string
 
 	ListenPort int
 
@@ -94,6 +99,25 @@ func (c *Config) VaultClient() (*vaultapi.Client, error) {
 	return nil, nil
 }
 
+func (c *Config) WithMetrics() (*metric.Meter, error) {
+	if c.MetricsEnabled {
+		exporter, err := prometheus.InstallNewPipeline(prometheus.Config{})
+		if err != nil {
+			return nil, err
+		}
+		http.HandleFunc("/", exporter.ServeHTTP)
+		go func() {
+			_ = http.ListenAndServe(c.MetricsAddr, nil)
+		}()
+
+		meter := exporter.MeterProvider().Meter("relay-pls")
+
+		return &meter, nil
+	}
+
+	return nil, nil
+}
+
 func (c *Config) WithTelemetry() error {
 	exporter, err := stdout.NewExporter(stdout.WithPrettyPrint())
 	if err != nil {
@@ -118,11 +142,15 @@ func NewConfig() (*Config, error) {
 	viper.SetEnvPrefix("relay_pls")
 	viper.AutomaticEnv()
 
+	viper.SetDefault("metrics_enabled", false)
 	viper.SetDefault("oauth_vault_engine_mount_root", DefaultOAuthVaultEngineMountRoot)
 	viper.SetDefault("vault_engine_mount", DefaultVaultEngineMount)
 
 	config := &Config{
 		Debug: viper.GetBool("debug"),
+
+		MetricsEnabled: viper.GetBool("metrics_enabled"),
+		MetricsAddr:    viper.GetString("metrics_server_addr"),
 
 		ListenPort: viper.GetInt("listen_port"),
 

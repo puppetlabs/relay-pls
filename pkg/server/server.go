@@ -2,14 +2,16 @@ package server
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"cloud.google.com/go/bigquery"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/google/uuid"
+	"github.com/puppetlabs/leg/timeutil/pkg/retry"
 	"github.com/puppetlabs/relay-pls/pkg/model"
 	"github.com/puppetlabs/relay-pls/pkg/plspb"
+	"go.opentelemetry.io/otel/label"
+	"go.opentelemetry.io/otel/metric"
 	"google.golang.org/api/iterator"
 )
 
@@ -33,12 +35,20 @@ func WithKeyManager(km model.KeyManager) BigQueryServerOption {
 	}
 }
 
+func WithMetrics(meter *metric.Meter) BigQueryServerOption {
+	return func(s *BigQueryServer) {
+		s.meter = meter
+	}
+}
+
 type BigQueryServer struct {
 	client *bigquery.Client
 	table  *bigquery.Table
 
 	keyManager         model.KeyManager
 	logMetadataManager model.LogMetadataManager
+
+	meter *metric.Meter
 }
 
 func (s *BigQueryServer) Svc() *plspb.LogService {
@@ -61,6 +71,7 @@ func (s *BigQueryServer) Create(ctx context.Context, in *plspb.LogCreateRequest)
 			Context: in.Context,
 			Name:    in.Name,
 		})
+	s.countOutcomeMetric(model.METRIC_LOG_CREATE_METADATA, err)
 	if err != nil {
 		return nil, err
 	}
@@ -80,11 +91,13 @@ func (s *BigQueryServer) List(in *plspb.LogListRequest, stream plspb.Log_ListSer
 
 func (s *BigQueryServer) MessageAppend(ctx context.Context, in *plspb.LogMessageAppendRequest) (*plspb.LogMessageAppendResponse, error) {
 	lm, err := s.logMetadataManager.Get(ctx, in.GetLogId())
+	s.countOutcomeMetric(model.METRIC_LOG_GET_METADATA, err)
 	if err != nil {
 		return nil, err
 	}
 
 	ct, err := s.keyManager.Encrypt(ctx, lm.Key, in.GetPayload())
+	s.countOutcomeMetric(model.METRIC_LOG_ENCRYPT_MESSAGE, err)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +119,9 @@ func (s *BigQueryServer) MessageAppend(ctx context.Context, in *plspb.LogMessage
 	logs = append(logs, message)
 
 	inserter := s.table.Inserter()
-	if err := inserter.Put(ctx, logs); err != nil {
+	err = inserter.Put(ctx, logs)
+	s.countOutcomeMetric(model.METRIC_LOG_INSERT_MESSAGE, err)
+	if err != nil {
 		return nil, err
 	}
 
@@ -120,6 +135,7 @@ func (s *BigQueryServer) MessageList(in *plspb.LogMessageListRequest, stream pls
 	ctx := context.Background()
 
 	lm, err := s.logMetadataManager.Get(ctx, in.GetLogId())
+	s.countOutcomeMetric(model.METRIC_LOG_GET_METADATA, err)
 	if err != nil {
 		return err
 	}
@@ -185,12 +201,14 @@ func (s *BigQueryServer) MessageList(in *plspb.LogMessageListRequest, stream pls
 				message.LogMessageId = logMessageID
 			}
 
-			// FIXME Add retry logic
-			// FIXME Collate errors
-			if err := stream.Send(message); err != nil {
-				// FIXME Do not log within this context
-				log.Printf("failed to send message: %v", err)
-			}
+			err = retry.Wait(ctx, func(ctx context.Context) (bool, error) {
+				if serr := stream.Send(message); serr != nil {
+					return false, serr
+				}
+
+				return true, nil
+			})
+			s.countOutcomeMetric(model.METRIC_LOG_STREAM_MESSAGE, err)
 		}
 
 		if !in.GetFollow() {
@@ -201,6 +219,27 @@ func (s *BigQueryServer) MessageList(in *plspb.LogMessageListRequest, stream pls
 	}
 
 	return nil
+}
+
+func (s *BigQueryServer) countOutcomeMetric(name string, err error) {
+	if err != nil {
+		s.countMetric(name, model.METRIC_LABEL_OUTCOME, model.METRIC_VALUE_FAILED)
+		return
+	}
+
+	s.countMetric(name, model.METRIC_LABEL_OUTCOME, model.METRIC_VALUE_SUCCESS)
+}
+
+func (s *BigQueryServer) countMetric(name, key, value string) {
+	ctx := context.Background()
+	if s.meter != nil {
+		counter := metric.Must(*s.meter).NewInt64Counter(name)
+
+		counter.Add(ctx, 1,
+			label.String(model.METRIC_LABEL_MODULE, "big-query-server"),
+			label.String(key, value),
+		)
+	}
 }
 
 func NewBigQueryServer(table *bigquery.Table, opts ...BigQueryServerOption) *BigQueryServer {
