@@ -28,27 +28,17 @@ func main() {
 		log.Fatalf("failed to configure options: %v", err)
 	}
 
-	if cfg.Debug {
-		if err = cfg.WithTelemetry(); err != nil {
-			log.Fatalf("failed to configure telemetry: %v", err)
-		}
+	if err = cfg.Telemetry(); err != nil {
+		log.Fatalf("failed to configure telemetry: %v", err)
 	}
 
-	if cfg.MetricsEnabled {
-		meter, err := cfg.WithMetrics()
-		if err != nil {
-			log.Fatalf("failed to configure metrics: %v", err)
-		}
-
-		if meter != nil {
-			serverOpts = append(serverOpts,
-				server.WithMetrics(meter),
-			)
-
-			counter := metric.Must(*meter).NewInt64Counter(model.METRIC_LOG_SERVICE_STARTUP)
-			counter.Add(ctx, 1, label.String(model.METRIC_LABEL_MODULE, "main"))
-		}
+	meter, err := cfg.Metrics()
+	if err != nil {
+		log.Fatalf("failed to configure metrics: %v", err)
 	}
+
+	counter := metric.Must(*meter).NewInt64Counter(model.MetricLogServiceStartup)
+	counter.Add(ctx, 1, label.String(model.MetricLabelModule, "main"))
 
 	vaultClient, err := cfg.VaultClient()
 	if err != nil {
@@ -83,6 +73,7 @@ func main() {
 	serverOpts = append(serverOpts,
 		server.WithBigQueryClient(bigqueryClient),
 		server.WithKeyManager(keyManager),
+		server.WithMetrics(meter),
 	)
 
 	bqs := server.NewBigQueryServer(table, serverOpts...)

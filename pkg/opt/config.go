@@ -2,6 +2,7 @@ package opt
 
 import (
 	"context"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 
@@ -19,6 +20,7 @@ import (
 
 const (
 	DefaultOAuthVaultEngineMountRoot = "oauth"
+	DefaultMetricsURL                = "http://localhost:3050"
 	DefaultVaultEngineMount          = "pls"
 	DefaultVaultURL                  = "http://localhost:8200"
 )
@@ -99,26 +101,38 @@ func (c *Config) VaultClient() (*vaultapi.Client, error) {
 	return nil, nil
 }
 
-func (c *Config) WithMetrics() (*metric.Meter, error) {
-	if c.MetricsEnabled {
-		exporter, err := prometheus.InstallNewPipeline(prometheus.Config{})
+func (c *Config) Metrics() (*metric.Meter, error) {
+	if !c.MetricsEnabled {
+		exporter, err := stdout.InstallNewPipeline([]stdout.Option{stdout.WithWriter(ioutil.Discard)}, nil)
 		if err != nil {
 			return nil, err
 		}
-		http.HandleFunc("/", exporter.ServeHTTP)
-		go func() {
-			_ = http.ListenAndServe(c.MetricsAddr, nil)
-		}()
 
 		meter := exporter.MeterProvider().Meter("relay-pls")
 
 		return &meter, nil
 	}
 
-	return nil, nil
+	exporter, err := prometheus.InstallNewPipeline(prometheus.Config{})
+	if err != nil {
+		return nil, err
+	}
+	http.HandleFunc("/", exporter.ServeHTTP)
+	go func() {
+		_ = http.ListenAndServe(c.MetricsAddr, nil)
+	}()
+
+	meter := exporter.MeterProvider().Meter("relay-pls")
+
+	return &meter, nil
 }
 
-func (c *Config) WithTelemetry() error {
+func (c *Config) Telemetry() error {
+	// FIXME Temporary until this is fleshed out (and tested) a bit more
+	if !c.Debug {
+		return nil
+	}
+
 	exporter, err := stdout.NewExporter(stdout.WithPrettyPrint())
 	if err != nil {
 		return err
@@ -143,6 +157,7 @@ func NewConfig() (*Config, error) {
 	viper.AutomaticEnv()
 
 	viper.SetDefault("metrics_enabled", false)
+	viper.SetDefault("metrics_server_addr", DefaultMetricsURL)
 	viper.SetDefault("oauth_vault_engine_mount_root", DefaultOAuthVaultEngineMountRoot)
 	viper.SetDefault("vault_engine_mount", DefaultVaultEngineMount)
 

@@ -59,6 +59,9 @@ func TestBigQueryServer(t *testing.T) {
 	table, err := cfg.BigQueryTable()
 	assert.NoError(t, err)
 
+	meter, err := cfg.Metrics()
+	assert.NoError(t, err)
+
 	km := manager.NewKeyManager()
 
 	logs := []*model.Log{}
@@ -92,6 +95,7 @@ func TestBigQueryServer(t *testing.T) {
 		server.WithBigQueryClient(bigqueryClient),
 		server.WithKeyManager(km),
 		server.WithLogMetadataManager(lmm),
+		server.WithMetrics(meter),
 	)
 
 	s := server.NewBigQueryServer(table, serverOpts...)
