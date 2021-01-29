@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hashicorp/vault/api"
 	"github.com/puppetlabs/leg/encoding/transfer"
+	"github.com/puppetlabs/leg/timeutil/pkg/retry"
 	"github.com/puppetlabs/relay-pls/pkg/model"
 )
 
@@ -40,7 +41,20 @@ func (vlms *VaultLogMetadataStore) ReadLogMetadata(ctx context.Context, id strin
 
 	dataPath := path.Join(logMetadataPath, "encryption_key")
 
-	key, err := vlms.client.Logical().Read(dataPath)
+	var key *api.Secret
+	err := retry.Wait(ctx, func(ctx context.Context) (bool, error) {
+		var verr error
+		key, verr = vlms.client.Logical().Read(dataPath)
+		if verr != nil {
+			return false, verr
+		}
+
+		return true, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +89,16 @@ func (vlms *VaultLogMetadataStore) CreateLogMetadata(ctx context.Context, log *m
 
 	dataPath := path.Join(logContextPath, "log_id")
 
-	logID, err := vlms.client.Logical().Read(dataPath)
+	var logID *api.Secret
+	err := retry.Wait(ctx, func(ctx context.Context) (bool, error) {
+		var verr error
+		logID, verr = vlms.client.Logical().Read(dataPath)
+		if verr != nil {
+			return false, verr
+		}
+
+		return true, nil
+	})
 	if err != nil {
 		return nil, err
 	}
