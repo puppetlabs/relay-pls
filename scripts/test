@@ -4,7 +4,7 @@ set -euo pipefail
 # this ensures that we are in the correct directory context
 cd "$(dirname "$0")"/..
 
-GO_TEST_ARGS=( -race )
+GO_TEST_ARGS=( -race --cover)
 
 if ! command -v gotestsum >/dev/null 2>&1; then
   go test "${GO_TEST_ARGS[@]}" ./...

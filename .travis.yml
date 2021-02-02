@@ -22,15 +22,16 @@ env:
   - DOCKER_CONFIG: "/tmp/.docker"
   - DOCKERHUB_USERNAME: relayshro
   - secure: EGWWMhmIJjCPOh1ADo817H6170v36T8XfFQoUiuOgba7971UGFLIWZeun+ZGZI75inVPBMNDYuVktjp46VsWyyMGq4c+t29YaS6o5gwyT1eAGkKjsmVKVR3xJLr6XQuCaFN2SZkS/nuVfov/PBIkO7H2tq8ffrZOCVrEO1YmtlTUOuoe5CGEdi+ipzbDEspSmEcoGxXp1Nfti1PVH2T725oZxo1qzjK4fAKf847C3p+jF548E9c1Pyfcm7wZiaakPhBUIIHzgYFXOkhGpurHiVVUSMvWGFrSsBVhrIT3tWpSVOqwTMq4DVJRBiJkydCNX7ezCAjMmKoqu/aBv5uaDCmdinIsgWAAB8QLwM3slDNyQ85F9UdEMfXxcPwMI0NOJKyL1iQ1wnfPm7DeBInvBsLP6RwFkePjbvJWnFbmmp7szgcW5vqLNH1xlb6Te7bsqiFsYD75VOIT283FRQSd7Luade5bV/mVgXt4h87BYeZe+eslGmS8NB/tS1CFj3vX6lPsH4hWJNizz5czTgCPik2HfsvTuxzClSuN+hSrUsYPGWWnx3JHU9VfiOK6XKstRvBIir6V++n1SWolzk4XXVyTXViDcSk21pwJOXv6hz1HJjO/vVFJY0qzJm5tn5GThc9yEbp2IaIPqvz8kt/4mJFIQEupvZrbJrgSE4N56/M=
+  - secure: nhP/GZuRblUOOofcA5qiJjEABdtzjIHPFJ2+qVbWpDFp+F7p9QxErePSm2/uCRsN19He3QQBdvtnHghbrzXWe7apGvxwOWs+FLzD1m8/uB2rd8R7Mx9YMgSGEtdSknX5xCCTTH7Mpv8XL7DTdg0pw3d2loN31QOin6jKOxvzeuRW02QZWnQeevw9gcg7whMrGCDR+BVk8LYhvCstTNeeLqP1G3q4T+YLNhQhjaDEklJI0YGSMxsekXVFZSMN6HN0w/5pdksu0ITs521Lo8W2BJHDZfzniWYVOAsgUdN+sxgHLyL+xWqtrfI3evrXpy3iU6I+r2dQE5cyYKVNWogGv3Qfb1AqVwLDOANr6wTO6myzelgliKZ3+Eji4lSQoiXrMdV7tNpZ1kvGlNS5dUpFj4xOQB2r5s0r1J7VBA7QT0XNDaPso2rJ6UigmHhbywE0j1/ptnO1MKQ2oShKX9wLBZkL1V1m9DHtheTW+jAc1hkaDzVx1uIA3eFCgS010GORxjZegqOcHXEJskh4Kmbh5OXcVwJL13GAN97x0HKgj5otVvxHsUCGIqCylpwYjS0mYscjkg+vpuT0mAbo34amxbKwcV6LEjQaMFVxRxw+J0AwM41PeFfO7/WNLBxz6Gb66VFk10GWiA3oCydnlF/KdAACHkCYL7rv8Pk7A5j/i/k=
 install:
 - mkdir -p "${DOCKER_CONFIG}"
 - echo '{}' >"${DOCKER_CONFIG}/config.json"
 - docker login --username "${DOCKERHUB_USERNAME}" --password-stdin <<<"${DOCKERHUB_PASSWORD}"
 stages:
-  - check
-  - test
-  - build
-  - deploy
+- check
+- test
+- build
+- deploy
 jobs:
   include:
   - stage: check
@@ -42,9 +43,11 @@ jobs:
     before_script:
     - go get gotest.tools/gotestsum
     - openssl aes-256-cbc -K $encrypted_c51f15aa433d_key -iv $encrypted_c51f15aa433d_iv
-      -in scripts/nebula-ci-service-account.json.enc -out scripts/nebula-ci-service-account.json -d
+      -in scripts/nebula-ci-service-account.json.enc -out scripts/nebula-ci-service-account.json
+      -d
     script:
-    - GOOGLE_APPLICATION_CREDENTIALS=$(realpath scripts/nebula-ci-service-account.json) ./scripts/ci test
+    - GOOGLE_APPLICATION_CREDENTIALS=$(realpath scripts/nebula-ci-service-account.json)
+      ./scripts/ci test
   - stage: build
     before_script:
     - if [ ! -d "$HOME/google-cloud-sdk/bin" ]; then rm -rf $HOME/google-cloud-sdk;
