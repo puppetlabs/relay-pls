@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
-	"github.com/golang/protobuf/ptypes"
 	"github.com/google/uuid"
 	"github.com/puppetlabs/relay-pls/pkg/manager"
 	"github.com/puppetlabs/relay-pls/pkg/model"
@@ -18,6 +17,7 @@ import (
 	"github.com/puppetlabs/relay-pls/pkg/test/mock"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -53,16 +53,44 @@ func TestBigQueryServer(t *testing.T) {
 		assert.FailNow(t, "BigQuery configuration must be set for this integration test")
 	}
 
-	bigqueryClient, err := cfg.BigQueryClient()
+	ctx := context.Background()
+
+	bigqueryClient, err := server.NewBigQueryClient(ctx, cfg)
 	assert.NoError(t, err)
 
-	table, err := cfg.BigQueryTable()
-	assert.NoError(t, err)
-
-	meter, err := cfg.Metrics()
+	bigqueryTable, err := server.NewBigQueryTable(ctx, cfg, bigqueryClient)
 	assert.NoError(t, err)
 
 	km := manager.NewKeyManager()
+
+	lmm := mock.NewMockLogMetadataManager(ctrl)
+
+	s := server.NewBigQueryServer(cfg, km, lmm, bigqueryClient, bigqueryTable, nil)
+
+	testLogMessages(t, cfg, s, km, lmm)
+}
+
+func TestInMemoryServer(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+	}
+
+	ctrl := gomock.NewController(t)
+
+	cfg, err := opt.NewConfig()
+	assert.NoError(t, err)
+
+	km := manager.NewKeyManager()
+
+	lmm := mock.NewMockLogMetadataManager(ctrl)
+
+	s := server.NewInMemoryServer(cfg, km, lmm)
+
+	testLogMessages(t, cfg, s, km, lmm)
+}
+
+func testLogMessages(t *testing.T, cfg *opt.Config, s plspb.LogServer, km model.KeyManager, lmm *mock.MockLogMetadataManager) {
+	ctx := context.Background()
 
 	logs := []*model.Log{}
 	for logIndex := 0; logIndex < MAX_LOG_COUNT; logIndex++ {
@@ -78,27 +106,10 @@ func TestBigQueryServer(t *testing.T) {
 			})
 	}
 
-	ctx := context.Background()
-
 	logMetadata, err := createLogMetadata(ctx, logs, km)
 	assert.NoError(t, err)
 
-	m := mock.NewMockLogMetadataStore(ctrl)
-
-	setExpectations(ctx, logs, logMetadata, m)
-
-	lmm := manager.NewLogMetadataManager(m)
-
-	var serverOpts []server.BigQueryServerOption
-
-	serverOpts = append(serverOpts,
-		server.WithBigQueryClient(bigqueryClient),
-		server.WithKeyManager(km),
-		server.WithLogMetadataManager(lmm),
-		server.WithMetrics(meter),
-	)
-
-	s := server.NewBigQueryServer(table, serverOpts...)
+	setExpectations(ctx, logs, logMetadata, lmm)
 
 	for _, log := range logs {
 		createResponse, err := s.Create(ctx, &plspb.LogCreateRequest{Context: log.Context, Name: log.Name})
@@ -110,8 +121,7 @@ func TestBigQueryServer(t *testing.T) {
 		for messageIndex := 0; messageIndex < MAX_LOG_MESSAGE_COUNT; messageIndex++ {
 			payload := []byte(fmt.Sprintf("test-message %d", messageIndex))
 
-			ts, err := ptypes.TimestampProto(time.Now().UTC())
-			assert.NoError(t, err)
+			ts := timestamppb.New(time.Now().UTC())
 
 			messageResponse, err := s.MessageAppend(ctx,
 				&plspb.LogMessageAppendRequest{
@@ -176,17 +186,17 @@ func createLogMetadata(ctx context.Context, logs []*model.Log, km model.KeyManag
 	return lm, nil
 }
 
-func setExpectations(ctx context.Context, logs []*model.Log, logMetadata []*model.LogMetadata, m *mock.MockLogMetadataStore) {
+func setExpectations(ctx context.Context, logs []*model.Log, logMetadata []*model.LogMetadata, m *mock.MockLogMetadataManager) {
 	for index, log := range logs {
 		m.
 			EXPECT().
-			CreateLogMetadata(ctx, gomock.Eq(log)).
+			Create(ctx, gomock.Eq(log)).
 			Return(logMetadata[index], nil).
 			AnyTimes()
 
 		m.
 			EXPECT().
-			ReadLogMetadata(ctx, gomock.Eq(logMetadata[index].LogID)).
+			Get(ctx, gomock.Eq(logMetadata[index].LogID)).
 			Return(logMetadata[index], nil).
 			AnyTimes()
 	}
