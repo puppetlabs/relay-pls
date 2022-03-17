@@ -9,7 +9,7 @@ addons:
     - buildah
 language: go
 go:
-- 1.14.x
+- 1.17.x
 cache:
   directories:
   - "${GOPATH}/pkg/mod"

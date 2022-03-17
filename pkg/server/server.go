@@ -2,63 +2,36 @@ package server
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"cloud.google.com/go/bigquery"
-	"github.com/golang/protobuf/ptypes"
 	"github.com/google/uuid"
+	"github.com/google/wire"
 	"github.com/puppetlabs/leg/timeutil/pkg/retry"
 	"github.com/puppetlabs/relay-pls/pkg/model"
+	"github.com/puppetlabs/relay-pls/pkg/opt"
 	"github.com/puppetlabs/relay-pls/pkg/plspb"
-	"go.opentelemetry.io/otel/label"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-type BigQueryServerOption func(s *BigQueryServer)
-
-func WithBigQueryClient(client *bigquery.Client) BigQueryServerOption {
-	return func(s *BigQueryServer) {
-		s.client = client
-	}
-}
-
-func WithLogMetadataManager(lmm model.LogMetadataManager) BigQueryServerOption {
-	return func(s *BigQueryServer) {
-		s.logMetadataManager = lmm
-	}
-}
-
-func WithKeyManager(km model.KeyManager) BigQueryServerOption {
-	return func(s *BigQueryServer) {
-		s.keyManager = km
-	}
-}
-
-func WithMetrics(meter *metric.Meter) BigQueryServerOption {
-	return func(s *BigQueryServer) {
-		s.meter = meter
-	}
-}
+var BigQueryServerSet = wire.NewSet(
+	NewBigQueryServer,
+	NewBigQueryClient,
+	NewBigQueryTable,
+)
 
 type BigQueryServer struct {
-	client *bigquery.Client
-	table  *bigquery.Table
-
-	keyManager         model.KeyManager
+	plspb.UnimplementedLogServer
+	client             *bigquery.Client
+	table              *bigquery.Table
 	logMetadataManager model.LogMetadataManager
-
-	meter *metric.Meter
-}
-
-func (s *BigQueryServer) Svc() *plspb.LogService {
-	return &plspb.LogService{
-		Create:        s.Create,
-		Delete:        s.Delete,
-		List:          s.List,
-		MessageAppend: s.MessageAppend,
-		MessageList:   s.MessageList,
-	}
+	keyManager         model.KeyManager
+	meter              *metric.Meter
 }
 
 func (s *BigQueryServer) Create(ctx context.Context, in *plspb.LogCreateRequest) (*plspb.LogCreateResponse, error) {
@@ -71,7 +44,7 @@ func (s *BigQueryServer) Create(ctx context.Context, in *plspb.LogCreateRequest)
 			Context: in.Context,
 			Name:    in.Name,
 		})
-	s.countOutcomeMetric(model.MetricLogCreateMetadata, err)
+	s.countOutcomeMetric(ctx, model.MetricLogCreateMetadata, err)
 	if err != nil {
 		return nil, err
 	}
@@ -90,14 +63,14 @@ func (s *BigQueryServer) List(in *plspb.LogListRequest, stream plspb.Log_ListSer
 }
 
 func (s *BigQueryServer) MessageAppend(ctx context.Context, in *plspb.LogMessageAppendRequest) (*plspb.LogMessageAppendResponse, error) {
-	lm, err := s.logMetadataManager.Get(ctx, in.GetLogId())
-	s.countOutcomeMetric(model.MetricLogGetMetadata, err)
+	lmm, err := s.logMetadataManager.Get(ctx, in.GetLogId())
+	s.countOutcomeMetric(ctx, model.MetricLogGetMetadata, err)
 	if err != nil {
 		return nil, err
 	}
 
-	ct, err := s.keyManager.Encrypt(ctx, lm.Key, in.GetPayload())
-	s.countOutcomeMetric(model.MetricLogEncryptMessage, err)
+	ct, err := s.keyManager.Encrypt(ctx, lmm.Key, in.GetPayload())
+	s.countOutcomeMetric(ctx, model.MetricLogEncryptMessage, err)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +101,7 @@ func (s *BigQueryServer) MessageAppend(ctx context.Context, in *plspb.LogMessage
 
 		return true, nil
 	})
-	s.countOutcomeMetric(model.MetricLogInsertMessage, err)
+	s.countOutcomeMetric(ctx, model.MetricLogInsertMessage, err)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +116,7 @@ func (s *BigQueryServer) MessageList(in *plspb.LogMessageListRequest, stream pls
 	ctx := context.Background()
 
 	lm, err := s.logMetadataManager.Get(ctx, in.GetLogId())
-	s.countOutcomeMetric(model.MetricLogGetMetadata, err)
+	s.countOutcomeMetric(ctx, model.MetricLogGetMetadata, err)
 	if err != nil {
 		return err
 	}
@@ -200,9 +173,7 @@ func (s *BigQueryServer) MessageList(in *plspb.LogMessageListRequest, stream pls
 
 			ts, ok := values[QueryColumnTimestamp].(time.Time)
 			if ok {
-				if thisTime, err := ptypes.TimestampProto(ts); err == nil {
-					message.Timestamp = thisTime
-				}
+				message.Timestamp = timestamppb.New(ts)
 			}
 
 			if logMessageID, ok := values[QueryColumnLogMessageID].(string); ok {
@@ -216,7 +187,7 @@ func (s *BigQueryServer) MessageList(in *plspb.LogMessageListRequest, stream pls
 
 				return true, nil
 			})
-			s.countOutcomeMetric(model.MetricLogStreamMessage, err)
+			s.countOutcomeMetric(ctx, model.MetricLogStreamMessage, err)
 		}
 
 		if !in.GetFollow() {
@@ -229,31 +200,77 @@ func (s *BigQueryServer) MessageList(in *plspb.LogMessageListRequest, stream pls
 	return nil
 }
 
-func (s *BigQueryServer) countOutcomeMetric(name string, err error) {
+func (s *BigQueryServer) countOutcomeMetric(ctx context.Context, name string, err error) {
+	attrs := []attribute.KeyValue{
+		attribute.String(model.MetricLabelOutcome, model.MetricValueSuccess),
+	}
 	if err != nil {
-		s.countMetric(name, model.MetricLabelOutcome, model.MetricValueFailed)
+		attrs = []attribute.KeyValue{
+			attribute.String(model.MetricLabelOutcome, model.MetricValueFailed),
+		}
+	}
+
+	s.countMetric(ctx, name, attrs...)
+}
+
+func (s *BigQueryServer) countMetric(ctx context.Context, name string, additionalAttrs ...attribute.KeyValue) {
+	if s.meter == nil {
 		return
 	}
 
-	s.countMetric(name, model.MetricLabelOutcome, model.MetricValueSuccess)
-}
-
-func (s *BigQueryServer) countMetric(name, key, value string) {
-	counter := metric.Must(*s.meter).NewInt64Counter(name)
-	counter.Add(context.Background(), 1,
-		label.String(model.MetricLabelModule, "big-query-server"),
-		label.String(key, value),
-	)
-}
-
-func NewBigQueryServer(table *bigquery.Table, opts ...BigQueryServerOption) *BigQueryServer {
-	s := &BigQueryServer{
-		table: table,
+	attrs := []attribute.KeyValue{
+		attribute.String(model.MetricLabelModule, "big-query-server"),
 	}
+	attrs = append(attrs, additionalAttrs...)
 
-	for _, opt := range opts {
-		opt(s)
+	counter := metric.Must(*s.meter).NewInt64Counter(name)
+	counter.Add(ctx, 1, attrs...)
+}
+
+func NewBigQueryServer(cfg *opt.Config,
+	keyManager model.KeyManager, logMetadataManager model.LogMetadataManager,
+	bigQueryClient *bigquery.Client, bigQueryTable *bigquery.Table,
+	meter *metric.Meter) plspb.LogServer {
+
+	s := &BigQueryServer{
+		client: bigQueryClient,
+		table:  bigQueryTable,
+
+		keyManager:         keyManager,
+		logMetadataManager: logMetadataManager,
+		meter:              meter,
 	}
 
 	return s
+}
+
+func NewBigQueryTable(ctx context.Context, cfg *opt.Config, client *bigquery.Client) (*bigquery.Table, error) {
+	schema := bigquery.Schema{
+		{Name: "log_id", Type: bigquery.StringFieldType, Required: true},
+		{Name: "log_message_id", Type: bigquery.StringFieldType, Required: true},
+		{Name: "timestamp", Type: bigquery.TimestampFieldType, Required: true},
+		{Name: "encrypted_payload", Type: bigquery.BytesFieldType},
+	}
+
+	metadata := &bigquery.TableMetadata{
+		Schema: schema,
+		Clustering: &bigquery.Clustering{
+			Fields: []string{
+				"log_id",
+			},
+		},
+	}
+
+	dataset := client.Dataset(cfg.Dataset)
+	table := dataset.Table(cfg.Table)
+	err := table.Create(ctx, metadata)
+	if e, ok := err.(*googleapi.Error); ok && e.Code != http.StatusConflict {
+		return nil, err
+	}
+
+	return table, nil
+}
+
+func NewBigQueryClient(ctx context.Context, cfg *opt.Config) (*bigquery.Client, error) {
+	return bigquery.NewClient(ctx, cfg.Project)
 }

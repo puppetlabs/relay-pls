@@ -8,6 +8,13 @@ import (
 	"github.com/google/tink/go/aead"
 	"github.com/google/tink/go/insecurecleartextkeyset"
 	"github.com/google/tink/go/keyset"
+	"github.com/google/tink/go/tink"
+	"github.com/google/wire"
+	"github.com/puppetlabs/relay-pls/pkg/model"
+)
+
+var KeyManagerProviderSet = wire.NewSet(
+	NewKeyManager,
 )
 
 type KeyManager struct {
@@ -31,7 +38,23 @@ func (m *KeyManager) Create(ctx context.Context) (string, error) {
 	return base64.RawStdEncoding.EncodeToString(buf.Bytes()), nil
 }
 
+func (m *KeyManager) Decrypt(ctx context.Context, key string, data []byte) ([]byte, error) {
+	a, err := m.cipher(ctx, key, data)
+	if err != nil {
+		return nil, err
+	}
+	return a.Decrypt(data, nil)
+}
+
 func (m *KeyManager) Encrypt(ctx context.Context, key string, data []byte) ([]byte, error) {
+	a, err := m.cipher(ctx, key, data)
+	if err != nil {
+		return nil, err
+	}
+	return a.Encrypt(data, nil)
+}
+
+func (m *KeyManager) cipher(ctx context.Context, key string, data []byte) (tink.AEAD, error) {
 	r, _ := base64.RawStdEncoding.DecodeString(key)
 	read := bytes.NewBuffer(r)
 	reader := keyset.NewBinaryReader(read)
@@ -45,9 +68,9 @@ func (m *KeyManager) Encrypt(ctx context.Context, key string, data []byte) ([]by
 		return nil, err
 	}
 
-	return a.Encrypt([]byte(data), nil)
+	return a, nil
 }
 
-func NewKeyManager() *KeyManager {
+func NewKeyManager() model.KeyManager {
 	return &KeyManager{}
 }

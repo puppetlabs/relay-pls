@@ -6,91 +6,62 @@ import (
 	"log"
 	"net"
 
-	"github.com/puppetlabs/relay-pls/pkg/manager"
-	"github.com/puppetlabs/relay-pls/pkg/model"
 	"github.com/puppetlabs/relay-pls/pkg/opt"
 	"github.com/puppetlabs/relay-pls/pkg/plspb"
-	"github.com/puppetlabs/relay-pls/pkg/server"
-	"github.com/puppetlabs/relay-pls/pkg/util/vaultutil"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"go.opentelemetry.io/otel/label"
-	"go.opentelemetry.io/otel/metric"
 	"google.golang.org/grpc"
 )
 
 func main() {
 	ctx := context.Background()
 
-	var serverOpts []server.BigQueryServerOption
-
 	cfg, err := opt.NewConfig()
 	if err != nil {
 		log.Fatalf("failed to configure options: %v", err)
 	}
 
-	if err = cfg.Telemetry(); err != nil {
-		log.Fatalf("failed to configure telemetry: %v", err)
-	}
+	var srv plspb.LogServer
+	var cleanup func()
 
-	meter, err := cfg.Metrics()
-	if err != nil {
-		log.Fatalf("failed to configure metrics: %v", err)
-	}
-
-	counter := metric.Must(*meter).NewInt64Counter(model.MetricLogServiceStartup)
-	counter.Add(ctx, 1, label.String(model.MetricLabelModule, "main"))
-
-	vaultClient, err := cfg.VaultClient()
-	if err != nil {
-		log.Fatalf("failed to initialize vault client: %v", err)
-	}
-
-	keyManager := manager.NewKeyManager()
-
-	if vaultClient != nil {
-		vaultEngineMount, err := vaultutil.CheckNormalizeEngineMount(vaultClient, cfg.VaultEngineMount)
+	// TODO Implement cleaner (and more exact) handling for determining the type of server
+	if cfg.Table != "" && cfg.Project != "" && cfg.Dataset != "" {
+		srv, cleanup, err = NewBigQueryServer(ctx, cfg)
 		if err != nil {
-			log.Fatalf("invalid vault engine mount %q: %+v", vaultEngineMount, err)
+			log.Fatal("failed to initialize BigQuery server")
+		}
+	} else {
+		srv, cleanup, err = NewInMemoryServer(ctx, cfg)
+		if err != nil {
+			log.Fatal("failed to initialize in memory server")
 		}
 
-		logMetadataStore := manager.NewVaultLogMetadataStore(vaultClient, vaultEngineMount, keyManager)
-
-		serverOpts = append(serverOpts,
-			server.WithLogMetadataManager(manager.NewLogMetadataManager(logMetadataStore)),
-		)
 	}
 
-	bigqueryClient, err := cfg.BigQueryClient()
-	if err != nil {
-		log.Fatalf("failed to initialize bigquery client: %v", err)
-	}
-
-	table, err := cfg.BigQueryTable()
-	if err != nil {
-		log.Fatalf("failed to initialize bigquery table: %v", err)
-	}
-
-	serverOpts = append(serverOpts,
-		server.WithBigQueryClient(bigqueryClient),
-		server.WithKeyManager(keyManager),
-		server.WithMetrics(meter),
-	)
-
-	bqs := server.NewBigQueryServer(table, serverOpts...)
-
-	s := grpc.NewServer(
+	gs := grpc.NewServer(
 		grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
 		grpc.StreamInterceptor(otelgrpc.StreamServerInterceptor()),
 	)
 
-	plspb.RegisterLogService(s, bqs.Svc())
+	plspb.RegisterLogServer(gs, srv)
+
+	defer cleanup()
+
+	telemetryServer, telemetryCleanup, err := NewTelemetryServer(ctx, cfg)
+	if err != nil {
+		log.Printf("failed to initialize telemetry server: %v", err)
+	}
+	defer telemetryCleanup()
+
+	if err := telemetryServer.Run(ctx); err != nil {
+		log.Printf("failed to run telemetry server: %v", err)
+	}
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.ListenPort))
 	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
+		log.Printf("failed to listen: %v", err)
 	}
 
-	if err := s.Serve(lis); err != nil {
-		log.Fatalf("failed to serve: %v", err)
+	if err := gs.Serve(lis); err != nil {
+		log.Printf("failed to serve gRPC service: %v", err)
 	}
 }

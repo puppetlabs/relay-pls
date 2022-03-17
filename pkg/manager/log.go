@@ -5,46 +5,35 @@ import (
 	"path"
 
 	"github.com/google/uuid"
+	"github.com/google/wire"
 	"github.com/hashicorp/vault/api"
 	"github.com/puppetlabs/leg/encoding/transfer"
 	"github.com/puppetlabs/leg/timeutil/pkg/retry"
 	"github.com/puppetlabs/relay-pls/pkg/model"
+	"github.com/puppetlabs/relay-pls/pkg/opt"
+	"github.com/puppetlabs/relay-pls/pkg/util/vaultutil"
 )
 
-type LogMetadataManager struct {
-	store model.LogMetadataStore
-}
+var VaultProviderSet = wire.NewSet(
+	NewVaultLogMetadataManager,
+)
 
-func (m *LogMetadataManager) Get(ctx context.Context, id string) (*model.LogMetadata, error) {
-	return m.store.ReadLogMetadata(ctx, id)
-}
-
-func (m *LogMetadataManager) Create(ctx context.Context, log *model.Log) (*model.LogMetadata, error) {
-	return m.store.CreateLogMetadata(ctx, log)
-}
-
-func NewLogMetadataManager(store model.LogMetadataStore) *LogMetadataManager {
-	return &LogMetadataManager{
-		store: store,
-	}
-}
-
-type VaultLogMetadataStore struct {
+type VaultLogMetadataManager struct {
 	client      *api.Client
 	engineMount string
 
 	keyManager model.KeyManager
 }
 
-func (vlms *VaultLogMetadataStore) ReadLogMetadata(ctx context.Context, id string) (*model.LogMetadata, error) {
-	logMetadataPath := path.Join(vlms.engineMount, "data", "logs", id)
+func (lmm *VaultLogMetadataManager) Get(ctx context.Context, id string) (*model.LogMetadata, error) {
+	logMetadataPath := path.Join(lmm.engineMount, "data", "logs", id)
 
 	dataPath := path.Join(logMetadataPath, "encryption_key")
 
 	var key *api.Secret
 	err := retry.Wait(ctx, func(ctx context.Context) (bool, error) {
 		var verr error
-		key, verr = vlms.client.Logical().Read(dataPath)
+		key, verr = lmm.client.Logical().Read(dataPath)
 		if verr != nil {
 			return false, verr
 		}
@@ -84,15 +73,15 @@ func (vlms *VaultLogMetadataStore) ReadLogMetadata(ctx context.Context, id strin
 	}, nil
 }
 
-func (vlms *VaultLogMetadataStore) CreateLogMetadata(ctx context.Context, log *model.Log) (*model.LogMetadata, error) {
-	logContextPath := path.Join(vlms.engineMount, "data", "contexts", log.Context, "name", log.Name)
+func (lmm *VaultLogMetadataManager) Create(ctx context.Context, log *model.Log) (*model.LogMetadata, error) {
+	logContextPath := path.Join(lmm.engineMount, "data", "contexts", log.Context, "name", log.Name)
 
 	dataPath := path.Join(logContextPath, "log_id")
 
 	var logID *api.Secret
 	err := retry.Wait(ctx, func(ctx context.Context) (bool, error) {
 		var verr error
-		logID, verr = vlms.client.Logical().Read(dataPath)
+		logID, verr = lmm.client.Logical().Read(dataPath)
 		if verr != nil {
 			return false, verr
 		}
@@ -141,13 +130,13 @@ func (vlms *VaultLogMetadataStore) CreateLogMetadata(ctx context.Context, log *m
 		},
 	}
 
-	if _, err := vlms.client.Logical().Write(dataPath, payload); err != nil {
+	if _, err := lmm.client.Logical().Write(dataPath, payload); err != nil {
 		return nil, err
 	}
 
-	logMetadataPath := path.Join(vlms.engineMount, "data", "logs", id)
+	logMetadataPath := path.Join(lmm.engineMount, "data", "logs", id)
 
-	key, err := vlms.keyManager.Create(ctx)
+	key, err := lmm.keyManager.Create(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +157,7 @@ func (vlms *VaultLogMetadataStore) CreateLogMetadata(ctx context.Context, log *m
 		},
 	}
 
-	if _, err := vlms.client.Logical().Write(keyPath, payload); err != nil {
+	if _, err := lmm.client.Logical().Write(keyPath, payload); err != nil {
 		return nil, err
 	}
 
@@ -179,11 +168,16 @@ func (vlms *VaultLogMetadataStore) CreateLogMetadata(ctx context.Context, log *m
 	}, nil
 }
 
-func NewVaultLogMetadataStore(client *api.Client, engineMount string, keyManager model.KeyManager) *VaultLogMetadataStore {
-	return &VaultLogMetadataStore{
-		client:      client,
-		engineMount: engineMount,
-
-		keyManager: keyManager,
+func NewVaultLogMetadataManager(cfg *opt.Config, vaultClient *api.Client) (model.LogMetadataManager, error) {
+	vaultEngineMount, err := vaultutil.CheckNormalizeEngineMount(vaultClient, cfg.VaultEngineMount)
+	if err != nil {
+		return nil, err
 	}
+
+	return &VaultLogMetadataManager{
+		client:      vaultClient,
+		engineMount: vaultEngineMount,
+
+		keyManager: NewKeyManager(),
+	}, nil
 }
