@@ -5,7 +5,7 @@ WORKDIR /build
 COPY . .
 RUN go build -a -installsuffix cgo -o /usr/bin/relay-pls ./cmd/relay-pls
 
-FROM alpine:latest
+FROM alpine:3.15
 COPY --from=builder /usr/bin/relay-pls /usr/bin/relay-pls
 RUN apk --no-cache add ca-certificates && update-ca-certificates
 CMD ["/usr/bin/relay-pls"]
