@@ -49,6 +49,21 @@ func (mr *MockKeyManagerMockRecorder) Create(ctx interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Create", reflect.TypeOf((*MockKeyManager)(nil).Create), ctx)
 }
 
+// Decrypt mocks base method
+func (m *MockKeyManager) Decrypt(ctx context.Context, key string, data []byte) ([]byte, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Decrypt", ctx, key, data)
+	ret0, _ := ret[0].([]byte)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Decrypt indicates an expected call of Decrypt
+func (mr *MockKeyManagerMockRecorder) Decrypt(ctx, key, data interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Decrypt", reflect.TypeOf((*MockKeyManager)(nil).Decrypt), ctx, key, data)
+}
+
 // Encrypt mocks base method
 func (m *MockKeyManager) Encrypt(ctx context.Context, key string, data []byte) ([]byte, error) {
 	m.ctrl.T.Helper()
@@ -115,57 +130,4 @@ func (m *MockLogMetadataManager) Get(ctx context.Context, id string) (*model.Log
 func (mr *MockLogMetadataManagerMockRecorder) Get(ctx, id interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockLogMetadataManager)(nil).Get), ctx, id)
-}
-
-// MockLogMetadataStore is a mock of LogMetadataStore interface
-type MockLogMetadataStore struct {
-	ctrl     *gomock.Controller
-	recorder *MockLogMetadataStoreMockRecorder
-}
-
-// MockLogMetadataStoreMockRecorder is the mock recorder for MockLogMetadataStore
-type MockLogMetadataStoreMockRecorder struct {
-	mock *MockLogMetadataStore
-}
-
-// NewMockLogMetadataStore creates a new mock instance
-func NewMockLogMetadataStore(ctrl *gomock.Controller) *MockLogMetadataStore {
-	mock := &MockLogMetadataStore{ctrl: ctrl}
-	mock.recorder = &MockLogMetadataStoreMockRecorder{mock}
-	return mock
-}
-
-// EXPECT returns an object that allows the caller to indicate expected use
-func (m *MockLogMetadataStore) EXPECT() *MockLogMetadataStoreMockRecorder {
-	return m.recorder
-}
-
-// CreateLogMetadata mocks base method
-func (m *MockLogMetadataStore) CreateLogMetadata(ctx context.Context, log *model.Log) (*model.LogMetadata, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateLogMetadata", ctx, log)
-	ret0, _ := ret[0].(*model.LogMetadata)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// CreateLogMetadata indicates an expected call of CreateLogMetadata
-func (mr *MockLogMetadataStoreMockRecorder) CreateLogMetadata(ctx, log interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLogMetadata", reflect.TypeOf((*MockLogMetadataStore)(nil).CreateLogMetadata), ctx, log)
-}
-
-// ReadLogMetadata mocks base method
-func (m *MockLogMetadataStore) ReadLogMetadata(ctx context.Context, id string) (*model.LogMetadata, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ReadLogMetadata", ctx, id)
-	ret0, _ := ret[0].(*model.LogMetadata)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ReadLogMetadata indicates an expected call of ReadLogMetadata
-func (mr *MockLogMetadataStoreMockRecorder) ReadLogMetadata(ctx, id interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadLogMetadata", reflect.TypeOf((*MockLogMetadataStore)(nil).ReadLogMetadata), ctx, id)
 }
